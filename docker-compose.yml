@@ -1,0 +1,55 @@
+version: '3.3'
+
+services:
+  # FastAPI Backend
+  api:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: ai-job-api
+    ports:
+      - "8000:8000"
+    volumes:
+      - .:/app
+      - /app/__pycache__
+    environment:
+      - DATABASE_URL=sqlite:///./data/app.db
+      - FAISS_PATH=./data/vector_store/
+      - OPENAI_API_KEY=${OPENAI_API_KEY:-}
+      - ADZUNA_APP_ID=${ADZUNA_APP_ID:-}
+      - ADZUNA_API_KEY=${ADZUNA_API_KEY:-}
+      - DEBUG=True
+      - LOG_LEVEL=INFO
+    command: uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
+    networks:
+      - ai-job-network
+
+  # Streamlit Frontend
+  ui:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: ai-job-ui
+    ports:
+      - "8501:8501"
+    volumes:
+      - .:/app
+      - /app/__pycache__
+    environment:
+      - DATABASE_URL=sqlite:///./data/app.db
+      - FAISS_PATH=./data/vector_store/
+      - OPENAI_API_KEY=${OPENAI_API_KEY:-}
+      - ADZUNA_APP_ID=${ADZUNA_APP_ID:-}
+      - ADZUNA_API_KEY=${ADZUNA_API_KEY:-}
+      - DEBUG=True
+    command: streamlit run streamlit_app/app.py --server.port=8501 --server.address=0.0.0.0
+    networks:
+      - ai-job-network
+    depends_on:
+      - api
+    stdin_open: true
+    tty: true
+
+networks:
+  ai-job-network:
+    driver: bridge
