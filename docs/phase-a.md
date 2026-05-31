@@ -374,7 +374,82 @@ Each one plugs into the foundation Phase A built — and gets traced for free.
 
 ---
 
-## 9. Questions to ask yourself (interview-readiness check)
+## 9. Tech stack actually used in Phase A
+
+The dependencies and services *exercised* by Phase A. (The wider project stack — Chroma, LangGraph, MCP, Promptfoo, Streamlit, etc. — is reserved for later phases. See [architecture.md](architecture.md) for the full picture.)
+
+### Application (Python)
+
+| Component | Package(s) | Role in Phase A |
+|---|---|---|
+| Web framework | `fastapi`, `uvicorn[standard]` | Async HTTP gateway, lifespan-managed startup/shutdown |
+| Config | `pydantic`, `pydantic-settings`, `python-dotenv` | Typed env-driven configuration with fail-fast validation |
+| Logging | stdlib `logging`, `contextvars` | JSON/pretty formatters, ContextVar-based request correlation |
+| LLM client | `openai`, `langchain`, `langchain-openai` | Smoke-test LLM call (will dominate Phases C–D) |
+| LLMOps SDK | `langfuse`, `langfuse.langchain` | Trace client + LangChain CallbackHandler |
+
+### Infrastructure (Docker)
+
+| Component | Image | Role |
+|---|---|---|
+| App container | Custom (Ubuntu 22.04 + `uv`) | Runs uvicorn, holds all Python deps |
+| Langfuse web | `langfuse/langfuse:3` | UI + trace ingest API (port 3000) |
+| Langfuse worker | `langfuse/langfuse-worker:3` | Async trace processor (Redis → ClickHouse) |
+| Metadata DB | `postgres:16-alpine` | Langfuse projects, users, prompts |
+| Trace storage | `clickhouse/clickhouse-server:24.3` | Columnar storage of traces/observations |
+| Queue | `redis:7-alpine` | Trace ingestion buffer |
+| Blob store | `minio/minio:latest` | S3-compatible storage for large trace payloads |
+| Bucket bootstrap | `minio/mc:latest` | One-shot init container creates the `langfuse` bucket |
+
+### External
+
+| Service | Usage |
+|---|---|
+| OpenAI API | `gpt-4o-mini` smoke-test call; `text-embedding-3-small` reserved for Phase B |
+
+---
+
+## 10. Skills demonstrated by Phase A
+
+What this phase actually proves you can do — useful as talking points in interviews and résumé bullets.
+
+### LLMOps foundation
+- **Self-hosted a production-shaped Langfuse v3 stack** (six services: web + worker + Postgres + ClickHouse + Redis + MinIO). Same architecture as Langfuse Cloud — local exercise of the real thing.
+- **Wired observability from request #1** rather than bolting it on later. Every LLM call in every future phase is automatically traced via the LangChain CallbackHandler.
+- **Solved the graceful-shutdown problem for async telemetry**: `shutdown_langfuse()` flushes the queue before the process exits so short-lived scripts don't lose their last traces.
+
+### Modern Python web engineering
+- **FastAPI lifespan context manager** — modern replacement for deprecated `@app.on_event`; cleanly shares state between startup and teardown.
+- **Async-safe correlation IDs via `ContextVar`** — survives async context switches where thread-locals would not.
+- **Per-request request-ID middleware** that honours incoming `x-request-id` headers (distributed-tracing friendly) and echoes them back in responses.
+- **Structured logging with environment-aware formatters**: JSON for prod aggregators, pretty for dev terminals, chosen at startup from `APP_ENV`.
+- **`/health` endpoint reports subsystem status** rather than a bare `{"status": "ok"}` — gives ops a real debug surface.
+
+### Configuration & secret management
+- **Typed config via pydantic-settings** with fail-fast validation (`openai_api_key: str` with no default means the app refuses to start without it).
+- **Conscious use of the configuration cascade**: class defaults → `.env` → process env → docker-compose `environment:`. Deliberately override `LANGFUSE_HOST` only inside the container so the same `.env` works both locally and in Docker.
+- **`.env` security hygiene**: `.env` gitignored; `.env.example` committed with placeholders; `.dockerignore` keeps `.env` out of image layers.
+
+### Container orchestration
+- **Multi-service docker-compose** with health checks and dependency ordering (`depends_on: condition: service_started` vs `service_healthy`, understood and chosen deliberately).
+- **YAML anchors** (`x-langfuse-common`) to DRY out shared env vars across web + worker.
+- **Bind-mounts for hot reload** (`app/`, `prompts/`, `scripts/`) vs **named volumes for persistence** (Postgres, ClickHouse, MinIO) — chosen per use case.
+- **One-shot init container pattern** (`minio-init`) for infrastructure bootstrap (creates the S3 bucket).
+- **Container image best practices**: layer caching (deps before source), `PYTHONUNBUFFERED=1`, exec-form CMD for clean signal propagation, OS deps via `--no-install-recommends`.
+
+### Real-world LLMOps debugging
+The gotchas section is more than a war story — each one is a transferable skill:
+- Diagnosed **YAML number-parsing ambiguity** (`0000…0000` parsed as integer 0, then cast back to `"0"`).
+- Diagnosed **Langfuse v3 healthcheck failure** (missing `wget`/`curl` in the upstream image) — switched to Node's stdlib `http.get`.
+- Diagnosed **docker-compose `restart` not re-reading `env_file`** — distinguished from `up -d --force-recreate`.
+- Diagnosed **`sys.path` issues for ad-hoc scripts** — solved at the container level via `PYTHONPATH=/workspace`, not by path-hacking each script.
+- Diagnosed **pydantic-settings reading literal quote characters** from `.env`.
+
+These are the integration bugs you hit in any real LLMOps deployment. Being able to reason about them — and write a reproducible fix into a compose file — is the day-job of a GenAI engineer.
+
+---
+
+## 11. Questions to ask yourself (interview-readiness check)
 
 Can you answer these without looking?
 
