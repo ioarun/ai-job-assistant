@@ -1,34 +1,31 @@
-# Python
-__pycache__
-*.pyc
-*.pyo
-*.egg-info/
-.Python
-build/
-dist/
-
-# Virtual environments
-venv/
-env/
-
-# IDE
-.vscode/
-.idea/
-
-# Environment
-.env
-.env.local
-
-# Database
-*.db
-data/
-
-# Logs
-logs/
-
-# Git
+# version control
 .git
 .gitignore
 
-# OS
+# python
+__pycache__
+*.pyc
+*.pyo
+.venv
+venv
+.pytest_cache
+.coverage
+htmlcov
+
+# data — never bake into image; mount as a volume
+data/
+
+# editor / OS
+.vscode
+.idea
 .DS_Store
+
+# secrets
+.env
+.env.local
+
+# docs / archive
+docs/archive
+
+# docker bookkeeping
+docker/postgres-data

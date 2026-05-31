@@ -1,75 +1,73 @@
-from fastapi import FastAPI
-from fastapi.middleware.cors import CORSMiddleware
+"""FastAPI application entry point."""
+from __future__ import annotations
+
+import logging
+import uuid
+from contextlib import asynccontextmanager
+
+from fastapi import FastAPI, Request
+
 from app.core.config import get_settings
-from app.core.logger import logger
-from app.db.init_db import init_db
-from app.models.schemas import HealthCheck
-import os
+from app.core.logging import configure_logging, request_id_var
+from app.observability.langfuse_client import (
+    get_langfuse,
+    healthcheck as langfuse_health,
+    shutdown_langfuse,
+)
 
-# Initialize settings
-settings = get_settings()
+log = logging.getLogger(__name__)
 
-# Initialize database
-init_db()
 
-# Create FastAPI app
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    """Run once at startup; teardown on shutdown."""
+    settings = get_settings()
+    configure_logging(level=settings.log_level, env=settings.app_env)
+    settings.ensure_dirs()
+    get_langfuse()  # warm the singleton; surfaces config issues at boot
+
+    log.info(
+        "ai-job-assistant starting",
+        extra={"env": settings.app_env, "debug": settings.debug},
+    )
+    yield
+    log.info("ai-job-assistant shutting down")
+    shutdown_langfuse()
+
+
 app = FastAPI(
-    title=settings.app_name,
-    description="AI-powered job application assistant",
-    version="0.1.0"
+    title="AI Job Assistant",
+    version="0.1.0",
+    lifespan=lifespan,
 )
 
-# Add CORS middleware
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=["*"],
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
 
-# Create data directories
-os.makedirs("./data/vector_store", exist_ok=True)
-os.makedirs("./logs", exist_ok=True)
-os.makedirs("./data/uploads", exist_ok=True)
-
-
-# Health check endpoint
-@app.get("/health", response_model=HealthCheck)
-async def health_check():
-    """Health check endpoint."""
-    logger.info("Health check called")
-    return HealthCheck(status="ok")
+@app.middleware("http")
+async def request_id_middleware(request: Request, call_next):
+    """Assign a UUID to each request and bind it to the log context."""
+    rid = request.headers.get("x-request-id") or uuid.uuid4().hex
+    token = request_id_var.set(rid)
+    try:
+        response = await call_next(request)
+        response.headers["x-request-id"] = rid
+        return response
+    finally:
+        request_id_var.reset(token)
 
 
-@app.get("/")
-async def root():
-    """Root endpoint."""
+@app.get("/health")
+async def health() -> dict:
+    """Liveness + subsystem readiness."""
+    settings = get_settings()
     return {
-        "message": "AI Job Application Assistant API",
-        "version": "0.1.0",
-        "docs": "/docs"
+        "status": "ok",
+        "env": settings.app_env,
+        "subsystems": {
+            "langfuse": langfuse_health(),
+        },
     }
 
 
-# Import and include API routes
-@app.on_event("startup")
-async def startup_event():
-    logger.info(f"Starting {settings.app_name}")
-    logger.info(f"Debug mode: {settings.debug}")
-    logger.info(f"Database URL: {settings.database_url}")
-
-
-@app.on_event("shutdown")
-async def shutdown_event():
-    logger.info(f"Shutting down {settings.app_name}")
-
-
-if __name__ == "__main__":
-    import uvicorn
-    uvicorn.run(
-        "app.main:app",
-        host="0.0.0.0",
-        port=8000,
-        reload=settings.debug
-    )
+@app.get("/")
+async def root() -> dict:
+    return {"app": "ai-job-assistant", "docs": "/docs"}
