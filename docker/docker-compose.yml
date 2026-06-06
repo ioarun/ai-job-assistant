@@ -58,6 +58,7 @@ services:
       - ../streamlit_app:/workspace/streamlit_app
       - ../prompts:/workspace/prompts
       - ../scripts:/workspace/scripts
+      - ../tests:/workspace/tests
       - ../data:/workspace/data
     command: uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
     depends_on:
