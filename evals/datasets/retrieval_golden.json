@@ -1,0 +1,22 @@
+[
+    {
+        "query": "Python and FastAPI experience",
+        "expected_doc_ids": ["sample_resume.pdf#2", "sample_resume.pdf#4"]
+    },
+    {
+        "query": "machine learning and deep learning",
+        "expected_doc_ids": ["sample_resume.pdf#6"]
+    },
+    {
+        "query": "cloud infrastructure Docker Kubernetes",
+        "expected_doc_ids": ["sample_resume.pdf#8", "sample_resume.pdf#9"]
+    },
+    {
+        "query": "distributed systems and scalability",
+        "expected_doc_ids": ["sample_resume.pdf#5"]
+    },
+    {
+        "query": "data engineering and pipeline",
+        "expected_doc_ids": ["sample_resume.pdf#7"]
+    }
+]

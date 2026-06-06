@@ -34,6 +34,13 @@ class Settings(BaseSettings):
     chroma_path: Path = Field(default=Path("./data/vector_store"))
     upload_dir: Path = Field(default=Path("./data/uploads"))
 
+    # ── Chroma & Retrieval ─────────────────────────────────
+    chroma_collection_name: str = "resumes"
+    embedding_batch_size: int = 100
+    top_k_retrieval: int = 10
+    reranker_top_k: int = 5
+    reranker_model: str = "ms-marco-MiniLM-L-12-v2"
+
     # ── App ────────────────────────────────────────────────
     app_env: str = "dev"
     debug: bool = True
