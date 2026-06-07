@@ -2,6 +2,9 @@
 
 > A complete walkthrough of what we built, why, and how the pieces fit together.
 > Read alongside the files in the repo. Last updated: 2026-06-07.
+>
+> For the *concepts* behind these pieces (RAG, BM25, embeddings, RRF, cross-encoders,
+> recall@k / MRR), see [phase-b-theory.md](phase-b-theory.md).
 
 ---
 

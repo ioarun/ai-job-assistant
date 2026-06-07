@@ -12,6 +12,7 @@ Beyond the functional product, every architectural choice is deliberately picked
 - [docs/architecture.md](docs/architecture.md) — system diagram and tech stack
 - [docs/phase-a.md](docs/phase-a.md) — Phase A walkthrough (foundation + Langfuse)
 - [docs/phase-b.md](docs/phase-b.md) — Phase B walkthrough (hybrid retrieval + eval gate)
+- [docs/phase-b-theory.md](docs/phase-b-theory.md) — Phase B theory & concepts (RAG, BM25, embeddings, RRF, reranking, eval metrics)
 
 ## Quick start
 
