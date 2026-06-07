@@ -11,6 +11,7 @@ Beyond the functional product, every architectural choice is deliberately picked
 - [PROJECT_PLAN.md](PROJECT_PLAN.md) — phased build plan (A → H) and locked decisions
 - [docs/architecture.md](docs/architecture.md) — system diagram and tech stack
 - [docs/phase-a.md](docs/phase-a.md) — Phase A walkthrough (foundation + Langfuse)
+- [docs/phase-b.md](docs/phase-b.md) — Phase B walkthrough (hybrid retrieval + eval gate)
 
 ## Quick start
 
@@ -33,12 +34,24 @@ docker compose -f docker/docker-compose.yml up -d --force-recreate app
 docker compose -f docker/docker-compose.yml exec app python3 scripts/smoke_trace.py
 ```
 
+### RAG: index a resume and run the retrieval eval (Phase B)
+
+```bash
+# Drop a resume PDF in data/uploads/, then index it (prints the chunk_ids)
+docker compose -f docker/docker-compose.yml exec app \
+  python3 -m scripts.index_resume "data/uploads/<your_resume>.pdf"
+
+# Run the hybrid-retrieval quality gate (recall@k / MRR; non-zero exit below baseline)
+docker compose -f docker/docker-compose.yml exec app \
+  python3 -m evals.run_retrieval_eval
+```
+
 ## Status
 
 | Phase | Description | Status |
 |---|---|---|
 | A | Foundation + Langfuse tracing | ✅ Complete |
-| B | RAG capability (Chroma + hybrid + rerank) | 🛠 In progress |
+| B | RAG capability (Chroma + hybrid + rerank) | ✅ Complete |
 | C | Tool implementations (Adzuna, gap analysis, etc.) | ⏳ Pending |
 | D | LangGraph agent orchestration | ⏳ Pending |
 | E | MCP server + Claude Desktop demo | ⏳ Pending |
