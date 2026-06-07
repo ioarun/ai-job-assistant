@@ -129,8 +129,10 @@ async def index_resume_chunks(
             "resume_id": resume_id
         })
 
-        # Add documents to Chroma (embeddings are auto-generated)
-        client.add_documents(documents=documents, ids=ids, metadatas=metadatas)
+        # Add documents to Chroma (embeddings auto-generated). The Documents
+        # already carry metadata, so don't pass metadatas again — add_documents
+        # forwards it to add_texts and would collide.
+        client.add_documents(documents=documents, ids=ids)
 
         log.info("Chunks indexed successfully", extra={
             "collection": collection_name,

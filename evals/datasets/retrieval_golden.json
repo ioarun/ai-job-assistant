@@ -1,22 +1,54 @@
 [
     {
-        "query": "Python and FastAPI experience",
-        "expected_doc_ids": ["sample_resume.pdf#2", "sample_resume.pdf#4"]
+        "query": "Visual Inertial Odometry on an NVIDIA Jetson rover",
+        "expected_doc_ids": [
+            "Arun Kumar - ML Engineer - 2026.pdf#3",
+            "Arun Kumar - ML Engineer - 2026.pdf#0"
+        ]
     },
     {
-        "query": "machine learning and deep learning",
-        "expected_doc_ids": ["sample_resume.pdf#6"]
+        "query": "monocular depth estimation with MIDAS deep learning model",
+        "expected_doc_ids": [
+            "Arun Kumar - ML Engineer - 2026.pdf#3",
+            "Arun Kumar - ML Engineer - 2026.pdf#0"
+        ]
     },
     {
-        "query": "cloud infrastructure Docker Kubernetes",
-        "expected_doc_ids": ["sample_resume.pdf#8", "sample_resume.pdf#9"]
+        "query": "deep learning frameworks PyTorch TensorFlow Scikit-Learn",
+        "expected_doc_ids": [
+            "Arun Kumar - ML Engineer - 2026.pdf#2",
+            "Arun Kumar - ML Engineer - 2026.pdf#1"
+        ]
     },
     {
-        "query": "distributed systems and scalability",
-        "expected_doc_ids": ["sample_resume.pdf#5"]
+        "query": "Microsoft Azure cloud platform and Azure AI Fundamentals certification",
+        "expected_doc_ids": [
+            "Arun Kumar - ML Engineer - 2026.pdf#2"
+        ]
     },
     {
-        "query": "data engineering and pipeline",
-        "expected_doc_ids": ["sample_resume.pdf#7"]
+        "query": "reinforcement learning agent for fuel economy and bipedal walking robot",
+        "expected_doc_ids": [
+            "Arun Kumar - ML Engineer - 2026.pdf#1"
+        ]
+    },
+    {
+        "query": "Docker containerization and version control with Git",
+        "expected_doc_ids": [
+            "Arun Kumar - ML Engineer - 2026.pdf#2",
+            "Arun Kumar - ML Engineer - 2026.pdf#1"
+        ]
+    },
+    {
+        "query": "MobileNet waste type detection Android application",
+        "expected_doc_ids": [
+            "Arun Kumar - ML Engineer - 2026.pdf#4"
+        ]
+    },
+    {
+        "query": "university recommendation system deployed on Azure App Service",
+        "expected_doc_ids": [
+            "Arun Kumar - ML Engineer - 2026.pdf#5"
+        ]
     }
 ]

@@ -118,4 +118,7 @@ async def test_index_resume_chunks_mock(sample_chunks):
         call_args = mock_client.add_documents.call_args
         assert call_args[1]["ids"][0] == "test_resume.pdf#0"
         assert len(call_args[1]["documents"]) == 3
-        assert len(call_args[1]["metadatas"]) == 3
+        # Metadata travels on the Document objects, not as a separate kwarg —
+        # passing metadatas= too would collide inside add_documents/add_texts.
+        assert "metadatas" not in call_args[1]
+        assert call_args[1]["documents"][0].metadata["source_file"] == "test_resume.pdf"

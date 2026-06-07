@@ -80,9 +80,11 @@ def test_bm25_search():
 
 
 def test_bm25_search_empty():
-    """Test BM25 search with no index."""
+    """When no BM25 index can be built (no indexed docs), search returns []."""
     retriever = HybridRetriever()
     retriever._bm25_index = None
+    # Simulate an empty collection: building the index leaves it unset.
+    retriever._build_bm25_index = lambda: None
 
     results = retriever._bm25_search("test query", top_k=5)
     assert results == []
@@ -92,13 +94,20 @@ def test_reciprocal_rank_fusion():
     """Test RRF fusion of BM25 and dense results."""
     retriever = HybridRetriever()
 
+    # BM25 returns doc indices; they must map to real chunk_ids so they
+    # share an ID space with the dense results and actually fuse.
+    retriever._bm25_ids = ["doc_0", "doc_1", "doc_2"]
     bm25_results = [(0, 10.0), (1, 8.0), (2, 5.0)]
     dense_results = [("doc_2", 0.9), ("doc_1", 0.8), ("doc_0", 0.7)]
 
     fused = retriever._reciprocal_rank_fusion(bm25_results, dense_results, k=60)
 
     assert len(fused) > 0
-    # Top result should have highest combined score
+    # Fused IDs are real chunk_ids, not synthetic "bm25_*" placeholders.
+    assert all(not doc_id.startswith("bm25_") for doc_id in fused)
+    # doc_0 is rank-0 in BM25 and rank-2 in dense; doc_2 is the reverse.
+    # Both should appear with a combined score from both sources.
+    assert "doc_0" in fused and "doc_2" in fused
     top_doc = max(fused.items(), key=lambda x: x[1])
     assert top_doc[1] > 0
 

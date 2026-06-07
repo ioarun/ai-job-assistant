@@ -30,6 +30,7 @@ class HybridRetriever:
         self.reranker = CrossEncoder(self.settings.reranker_model)
         self._bm25_index = None
         self._bm25_docs = []
+        self._bm25_ids = []
 
     def _build_bm25_index(self) -> None:
         """Build BM25 index from Chroma collection."""
@@ -42,6 +43,7 @@ class HybridRetriever:
                 return
 
             self._bm25_docs = docs["documents"]
+            self._bm25_ids = docs["ids"]
             tokenized_docs = [doc.lower().split() for doc in self._bm25_docs]
             self._bm25_index = BM25Okapi(tokenized_docs)
 
@@ -79,7 +81,7 @@ class HybridRetriever:
             List of (doc_id, score) tuples
         """
         try:
-            results = self.chroma.similarity_search_with_scores(query, k=top_k)
+            results = self.chroma.similarity_search_with_score(query, k=top_k)
 
             retrieved = []
             for doc, score in results:
@@ -105,10 +107,11 @@ class HybridRetriever:
         """
         fused_scores = {}
 
-        # BM25 scores (using indices from _bm25_docs)
+        # BM25 scores: map doc index back to its real chunk_id so both
+        # sources share one ID space and can actually be fused.
         for rank, (doc_idx, bm25_score) in enumerate(bm25_results):
-            if doc_idx < len(self._bm25_docs):
-                doc_id = f"bm25_{doc_idx}"
+            if doc_idx < len(self._bm25_ids):
+                doc_id = self._bm25_ids[doc_idx]
                 rrf_score = 1.0 / (k + rank + 1)
                 fused_scores[doc_id] = fused_scores.get(doc_id, 0) + rrf_score
 
@@ -193,22 +196,27 @@ class HybridRetriever:
             # Fuse results
             fused = self._reciprocal_rank_fusion(bm25_results, dense_results)
 
-            # Get full documents from Chroma for top fused results
+            # Fetch each fused chunk by its exact ID so content and chunk_id
+            # always correspond (a source_file filter would return the wrong
+            # chunk when a file has many chunks).
+            collection = self.chroma._collection
             retrieved_chunks = []
             for doc_id, fusion_score in list(fused.items())[:top_k * 2]:
                 try:
-                    results = self.chroma.similarity_search_with_scores(query, k=1, filter={"source_file": doc_id.split("#")[0]})
-                    if results:
-                        doc, score = results[0]
-                        chunk = RetrievedChunk(
-                            chunk_id=doc_id,
-                            content=doc.page_content,
-                            score=fusion_score,
-                            metadata=doc.metadata,
-                            source_file=doc.metadata.get("source_file", ""),
-                            chunk_index=doc.metadata.get("chunk_index", 0)
-                        )
-                        retrieved_chunks.append(chunk)
+                    record = collection.get(ids=[doc_id], include=["documents", "metadatas"])
+                    docs = record.get("documents") or []
+                    if not docs:
+                        continue
+                    meta = (record.get("metadatas") or [{}])[0] or {}
+                    chunk = RetrievedChunk(
+                        chunk_id=doc_id,
+                        content=docs[0],
+                        score=fusion_score,
+                        metadata=meta,
+                        source_file=meta.get("source_file", ""),
+                        chunk_index=meta.get("chunk_index", 0)
+                    )
+                    retrieved_chunks.append(chunk)
                 except Exception as e:
                     log.debug("Failed to retrieve document", extra={"doc_id": doc_id, "error": str(e)})
                     continue
