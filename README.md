@@ -11,6 +11,7 @@ Beyond the functional product, every architectural choice is deliberately picked
 - [PROJECT_PLAN.md](PROJECT_PLAN.md) — phased build plan (A → H) and locked decisions
 - [docs/architecture.md](docs/architecture.md) — system diagram and tech stack
 - [docs/phase-a.md](docs/phase-a.md) — Phase A walkthrough (foundation + Langfuse)
+- [docs/phase-a-theory.md](docs/phase-a-theory.md) — Phase A theory & concepts (observability/LLMOps, tracing model, config cascade, OLTP/OLAP, container orchestration)
 - [docs/phase-b.md](docs/phase-b.md) — Phase B walkthrough (hybrid retrieval + eval gate)
 - [docs/phase-b-theory.md](docs/phase-b-theory.md) — Phase B theory & concepts (RAG, BM25, embeddings, RRF, reranking, eval metrics)
 
