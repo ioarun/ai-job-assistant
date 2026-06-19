@@ -1,0 +1,32 @@
+{
+  "count": 142,
+  "mean": 135000.0,
+  "results": [
+    {
+      "id": "4900000001",
+      "title": "AI Engineer",
+      "company": { "display_name": "Acme AI" },
+      "location": { "display_name": "Sydney NSW", "area": ["Australia", "New South Wales", "Sydney"] },
+      "description": "Build and ship LLM-powered features. RAG, vector search, Python, LangChain.",
+      "salary_min": 130000.0,
+      "salary_max": 160000.0,
+      "category": { "label": "IT Jobs", "tag": "it-jobs" },
+      "contract_type": "permanent",
+      "created": "2026-06-05T09:15:00Z",
+      "redirect_url": "https://www.adzuna.com.au/jobs/details/4900000001"
+    },
+    {
+      "id": "4900000002",
+      "title": "Machine Learning Engineer",
+      "company": { "display_name": "DataWorks" },
+      "location": { "display_name": "Melbourne VIC", "area": ["Australia", "Victoria", "Melbourne"] },
+      "description": "MLOps, model serving, feature pipelines. PyTorch, AWS, Docker.",
+      "salary_min": 120000.0,
+      "salary_max": 150000.0,
+      "category": { "label": "IT Jobs", "tag": "it-jobs" },
+      "contract_type": "permanent",
+      "created": "2026-06-04T14:30:00Z",
+      "redirect_url": "https://www.adzuna.com.au/jobs/details/4900000002"
+    }
+  ]
+}
