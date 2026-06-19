@@ -38,7 +38,9 @@ def _span(name: str, **inputs) -> Iterator[object]:
     if lf is None:
         yield None
         return
-    with lf.start_as_current_span(name=name, input=inputs) as span:
+    # Langfuse v4: observations are created via start_as_current_observation;
+    # as_type="tool" tags this as a tool call in the trace tree.
+    with lf.start_as_current_observation(name=name, as_type="tool", input=inputs) as span:
         yield span
 
 
@@ -174,6 +176,7 @@ def search_jobs(
                 cached.fetched_at = datetime.utcnow()
                 log.info("Adzuna live fetch", extra={"query_hash": qhash[:12], "jobs": len(jobs)})
 
+            session.flush()        # INSERT the pending cache row before we detach it
             session.expunge_all()  # detach so callers can read attrs after the session closes
 
         if span is not None:
