@@ -1,7 +1,7 @@
 # Phase B — RAG Capability
 
 > A complete walkthrough of what we built, why, and how the pieces fit together.
-> Read alongside the files in the repo. Last updated: 2026-06-07.
+> Read alongside the files in the repo. Last updated: 2026-06-19.
 >
 > For the *concepts* behind these pieces (RAG, BM25, embeddings, RRF, cross-encoders,
 > recall@k / MRR), see [phase-b-theory.md](phase-b-theory.md).
@@ -25,7 +25,7 @@ This is the first phase that touches the actual product. Phase A was plumbing; P
 - No agent calling the retriever (Phase D); no UI (Phase G)
 - No Promptfoo/CI wiring — the eval runner exists and is CI-shaped, but it gets bolted into GitHub Actions in Phase F
 
-**Honest caveat on the eval:** with a single resume the store holds only **6 chunks**, and the eval returns at most 5 results. A perfect 1.000 proves the pipeline *runs correctly and is genuinely hybrid* — it is **not yet a hard test of retrieval quality**. The gate gets discriminating once job descriptions land in the collection (Phase C+) and the golden set grows. That's called out again in §8.
+**Honest caveat on the eval:** with a single resume the store holds only **6 chunks**, and the eval returns at most 5 results. A perfect 1.000 proves the pipeline *runs correctly and is genuinely hybrid* — it is **not yet a hard test of retrieval quality**. Note the Chroma collection stays **resume-only**: Phase C caches jobs in **SQLite**, and the gap analyzer retrieves *resume* chunks, so job ingestion does **not** lift the 6-chunk ceiling (this corrects an earlier forecast). The gate only becomes discriminating once the **golden set grows** — more queries, and ideally multiple resumes. That's revisited in §8.
 
 ---
 
@@ -234,15 +234,14 @@ Expected: the gate prints `RESULT: PASS ✅` with recall@5 ≥ 0.60 and exits 0;
 
 | Missing piece | Lands in |
 |---|---|
-| Job descriptions in the vector store (makes the eval discriminating) | Phase C |
-| Adzuna job search, gap analysis, project suggestions, interview Q&A | Phase C |
-| The retriever wired in as an agent tool | Phase D |
+| Adzuna job search, project suggestions, interview Q&A | Phase C (Adzuna client done; gap analysis underway) |
+| The retriever reused by the tools / agent | **Started:** the Phase C gap analyzer now calls `retrieve()` for resume context; full agent orchestration is Phase D |
 | Multi-query expansion / HyDE / section-aware filtering | Future (if evals justify it) |
 | Promptfoo config + GitHub Actions running this gate on every PR | Phase F |
 | A larger golden set across multiple documents | Phase F (alongside gap/interview goldens) |
 | Streamlit "upload resume → see retrieved chunks" UI | Phase G |
 
-The single most important follow-up: **once Phase C adds job descriptions, the 6-chunk ceiling lifts and the eval becomes a real quality signal.** Revisit the golden set then.
+**Correction to an earlier forecast:** previous versions of this doc predicted Phase C would index job descriptions into the Chroma collection and thereby lift the 6-chunk ceiling. That is **not** what Phase C does — jobs are cached in **SQLite**, and the gap analyzer retrieves *resume* chunks, so the collection stays resume-only. Making this eval a hard quality signal therefore depends on **growing the golden set** (more queries, ideally multiple resumes) — not on job ingestion. Revisit the golden set in Phase F.
 
 ---
 

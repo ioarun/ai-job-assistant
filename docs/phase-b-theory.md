@@ -2,7 +2,7 @@
 
 > The *why* behind everything Phase B implements. Read this for the concepts;
 > read [phase-b.md](phase-b.md) for the file-by-file build walkthrough.
-> Last updated: 2026-06-07.
+> Last updated: 2026-06-19.
 
 ---
 
@@ -12,7 +12,7 @@ An LLM only knows what was in its training data. **RAG** is the pattern of *fetc
 
 It splits into two halves:
 - **Retrieval** — find the most relevant chunks of your data for a given query. (This is all of Phase B.)
-- **Generation** — feed those chunks to the LLM to produce an answer. (Comes later — Phase C/D.)
+- **Generation** — feed those chunks to the LLM to produce an answer. (Now realized in **Phase C**: the gap analyzer reuses this exact retriever to pull resume context, then feeds it to the LLM to assess skill gaps.)
 
 Phase B built the retrieval half against the resume. The quality of a RAG system is **bounded by retrieval** — if you fetch the wrong chunks, no amount of clever prompting saves the answer. That's why retrieval gets its own phase and its own eval gate.
 
@@ -150,7 +150,7 @@ MRR      = 1/2 = 0.5   ← but buried the first hit at rank 2
 A retriever can have perfect recall but poor MRR (right answers present but ranked low). The **reranker's entire job is to raise MRR**. Tracking both tells you *which stage* to tune: low recall → fix retrieval/fusion; low MRR → fix the reranker.
 
 ### The gate
-`run_retrieval_eval.py` runs every golden query, averages the metrics, and **exits non-zero if recall@5 < baseline (0.60)**. That non-zero exit is what makes it a **regression gate** — in Phase F it drops into CI so a code change that degrades retrieval *fails the build*. We hit **recall@5 = 1.000** (with the honest caveat: only 6 chunks, so it proves correctness, not yet hard quality).
+`run_retrieval_eval.py` runs every golden query, averages the metrics, and **exits non-zero if recall@5 < baseline (0.60)**. That non-zero exit is what makes it a **regression gate** — in Phase F it drops into CI so a code change that degrades retrieval *fails the build*. We hit **recall@5 = 1.000** (with the honest caveat: only 6 chunks, so it proves correctness, not yet hard quality). Note this ceiling is **not** lifted by Phase C: jobs are cached in SQLite and the Chroma collection stays resume-only, so making the eval a hard quality signal means **growing the golden set** (more queries, ideally multiple resumes), not ingesting jobs.
 
 ---
 
