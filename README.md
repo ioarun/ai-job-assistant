@@ -14,6 +14,8 @@ Beyond the functional product, every architectural choice is deliberately picked
 - [docs/phase-a-theory.md](docs/phase-a-theory.md) — Phase A theory & concepts (observability/LLMOps, tracing model, config cascade, OLTP/OLAP, container orchestration)
 - [docs/phase-b.md](docs/phase-b.md) — Phase B walkthrough (hybrid retrieval + eval gate)
 - [docs/phase-b-theory.md](docs/phase-b-theory.md) — Phase B theory & concepts (RAG, BM25, embeddings, RRF, reranking, eval metrics)
+- [docs/phase-c.md](docs/phase-c.md) — Phase C walkthrough (tool implementations; in progress)
+- [docs/phase-c-theory.md](docs/phase-c-theory.md) — Phase C theory & concepts (caching, untrusted input, structured output, prompt injection & guardrails)
 
 ## Quick start
 
