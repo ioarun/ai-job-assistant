@@ -465,3 +465,40 @@ Can you answer these without looking?
 10. If a Langfuse trace doesn't appear in the UI, what are the three places to check (in order)?
 
 If any are fuzzy, those are the right things to ask me about next.
+
+---
+
+## 12. Answers (elaborated)
+
+**1. Why is Langfuse self-hosted with ClickHouse + Redis + MinIO instead of just Postgres?**
+Because traces are a fundamentally different workload from relational metadata, and Langfuse v3+ splits them by storage engine to match. **Postgres** holds the small, transactional, relational data — users, projects, prompts, eval runs — an **OLTP** workload that wants ACID updates and joins. **ClickHouse** holds traces/observations: a huge volume of append-only, timestamped events you scan and aggregate ("p95 latency this week", "tokens by model") — an **OLAP** workload a columnar store handles orders of magnitude faster than Postgres, which would bloat and slow under that write/scan volume. **Redis** is a queue between ingestion and storage (load-levelling): the web service accepts traces and drops them on the queue; the worker drains them into ClickHouse at a steady rate, so a burst doesn't overwhelm the writer or block the sender. **MinIO** is S3-compatible blob storage for large payloads (long prompts, images) that don't belong inline in a DB row — the DB stores a pointer, the blob store stores the bytes. So the six services map to four distinct needs (OLTP, OLAP, queue, blob), and running them locally exercises the same architecture Langfuse Cloud runs at scale.
+
+**2. What does `request_id_var: ContextVar[str]` give us that a thread-local wouldn't?**
+Async-safety across `await` boundaries. A thread-local is private to an OS thread, but an async server runs many concurrent requests on one thread, interleaving them at every `await`. With a thread-local, request A's id would still be "current" when the loop switches to request B mid-await, so B's logs would be stamped with A's id — cross-talk. A `ContextVar` is carried by the runtime per logical task/context, not per thread: when A suspends at an await and B resumes, B sees its own context; when A resumes it sees A's again. The middleware sets it at request start and `reset(token)`s it in `finally` so the value can't leak into an unrelated task that reuses the context.
+
+**3. Why does `get_langfuse()` return `None` when keys are absent, rather than a no-op stub?**
+To fail loudly instead of silently. A no-op stub that swallows calls would let the app *appear* to trace while recording nothing — you'd discover the gap only when hunting for traces that never existed. Returning `None` forces every caller to write an explicit `if handler: ...` branch, making "tracing might be off" a visible decision rather than a hidden lie. It's the same fail-fast philosophy as the required OpenAI key. A null-object stub is appropriate when the absence is truly inert; here the absence is information the developer needs.
+
+**4. Why is `shutdown_langfuse()` needed in the FastAPI lifespan?**
+Because telemetry is asynchronous and batched. To avoid adding latency to every request, the client buffers events in memory and ships them in the background — which creates a tail-loss hazard: if the process exits while events are still buffered, those traces never send. `shutdown_langfuse()` calls `flush()` in the lifespan's shutdown block, blocking just long enough to drain the buffer before exit. It matters most for short-lived processes (the smoke script) that would otherwise exit right after the LLM call, losing the very trace they exist to produce.
+
+**5. What's the difference between `condition: service_started` and `condition: service_healthy`?**
+`service_started` means Docker has launched the container's process; `service_healthy` means a defined healthcheck command inside it has actually passed (it's ready to serve). The gap matters for slow boots: Langfuse can take 90s+ migrating Postgres + ClickHouse, so it's "started" long before "healthy". Our app depends on Langfuse with `service_started` deliberately — the app already handles Langfuse-absent gracefully (`get_langfuse()` → `None`), so gating boot on full health would just block startup for no benefit. Choose the condition to match how the dependent actually behaves, not reflexively the strictest one.
+
+**6. Why is the OpenAI API key required but the Adzuna keys optional in `Settings`?**
+Because of what the app can do without each. `openai_api_key: str` has no default, so pydantic-settings refuses to construct `Settings` without it — the app won't start, which is correct since nothing works without the LLM/embeddings. The Adzuna keys have empty-string defaults, so they're optional: Phases A/B don't need them, and even in Phase C the tool can be tested with mocked HTTP. Fail-fast on what's essential at startup; stay permissive on feature-specific creds and let the feature check for them when invoked (which `adzuna_client` does, raising a clear error if missing).
+
+**7. Where does `LANGFUSE_HOST` get overridden between the host machine and the container, and why?**
+In the docker-compose `environment:` block for the app service — the top of the config cascade. In `.env` it's `http://localhost:3000` so host-side scripts and your browser reach Langfuse. But inside the container "localhost" is the container itself, so the app must reach the langfuse-web *container* by its Docker-network name; compose overrides it to `http://langfuse-web:3000`. That's the point of the cascade: one `.env` works both on your laptop and in Docker because the environment-specific override lives in compose.
+
+**8. What does `@lru_cache(maxsize=1)` do for `get_settings()` and why does that matter?**
+It memoizes the zero-arg factory so `Settings` is constructed once and every call returns the same instance — a lightweight singleton with no framework. It matters for consistency and cost: building `Settings` parses `.env`, and you want one authoritative config shared everywhere, not a fresh parse per call site. The same pattern on `get_langfuse()` ensures one client = one HTTP session and one shared event buffer instead of many. `maxsize=1` just states there's only ever one value to cache.
+
+**9. Why is `PYTHONPATH=/workspace` set in the compose env rather than at the top of each script?**
+So `import app...` works for every ad-hoc script without per-script path hacking. Running `python3 scripts/foo.py` puts `scripts/` on `sys.path`, not the project root, so `import app` fails. You *could* prepend `sys.path` edits to every script, but that's repetitive and clutters each file. Setting `PYTHONPATH=/workspace` once in the compose environment fixes it uniformly for all current and future scripts, at the right layer (the environment) — the same "solve it once at the boundary" instinct as the config override.
+
+**10. If a Langfuse trace doesn't appear in the UI, what are the three places to check (in order)?**
+Follow the data flow — emitted → flushed → ingested/stored:
+1. **App side — was it emitted?** Is Langfuse enabled (keys present, `get_langfuse()` not `None`) and was the callback actually passed into the LLM call's `config`? A missing callback means nothing was ever produced.
+2. **Flush — did the process exit first?** For scripts, confirm `shutdown_langfuse()`/`flush()` ran; an unflushed buffer looks identical to "no trace".
+3. **Backend pipeline — was it stored?** Can the app reach `langfuse-web` (the `LANGFUSE_HOST` override), and are the worker + Redis + ClickHouse up so the queued event got persisted?
