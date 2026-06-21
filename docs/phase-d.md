@@ -258,14 +258,16 @@ Requires a resume indexed (`scripts/index_resume.py`) and the stack configured. 
 HITL pause fires only on an Adzuna cache **miss**; the demo run hit the cache, so the
 pause wasn't exercised end-to-end (the mechanism is verified separately).
 
-### Known follow-ups (small, not blocking)
-- **Register msgpack types.** LangGraph warns it will eventually block deserializing
-  unregistered types (`JobView`, `GapAnalysis`, `ProjectSuggestions`). Pass
-  `allowed_msgpack_modules` (or a custom serde) at compile to future-proof.
-- **Decline path.** If a user *rejects* the live search, `jobs`/`selected_job` are
-  empty but the plan still lists `analyze_gap` — which would fail on `None.title`. The
-  executor/router should skip a tool whose dependency (`TOOL_DEPENDENCIES`) is missing,
-  and the responder should report "no jobs found" gracefully.
+### Follow-ups (resolved)
+- **Register msgpack types.** ✅ `open_graph` now builds the saver with a
+  `JsonPlusSerializer(allowed_msgpack_modules=[JobView, GapAnalysis, ProjectSuggestions,
+  InterviewKit])`, silencing the "unregistered type" warnings and future-proofing the
+  checkpoint format.
+- **Decline path.** ✅ `tool_executor` now skips any tool whose `TOOL_DEPENDENCIES`
+  prerequisite is missing (marking it completed so the loop advances), and the responder
+  reports "no jobs found" gracefully. Verified live by declining a cache-miss search:
+  the HITL pause fired, the decline made no live Adzuna call, and the run completed
+  cleanly with the downstream tools skipped.
 
 ---
 

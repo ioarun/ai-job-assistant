@@ -156,6 +156,15 @@ async def tool_executor(state: AgentState, config) -> dict:
             return {"completed": completed, "jobs": [], "selected_job": None,
                     "messages": [AIMessage(content="Live search declined; skipping job search.")]}
 
+    # Skip a tool whose prerequisite never materialised (e.g. the user declined the
+    # live search, so there's no selected_job for analyze_gap). Marking it completed
+    # lets the loop advance instead of crashing on missing state.
+    dep = TOOL_DEPENDENCIES.get(tool)
+    if dep and not state.get(dep):
+        completed.append(tool)
+        return {"completed": completed,
+                "messages": [AIMessage(content=f"Skipped {tool}: prerequisite '{dep}' missing.")]}
+
     update = await TOOL_FNS[tool](state)
     completed.append(tool)
     update["completed"] = completed
