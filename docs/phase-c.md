@@ -1,12 +1,12 @@
 # Phase C — Tool Implementations
 
 > A complete walkthrough of what we built, why, and how the pieces fit together.
-> Read alongside the files in the repo. Last updated: 2026-06-19.
+> Read alongside the files in the repo. Last updated: 2026-06-21.
 >
 > For the *concepts* behind these pieces (caching, untrusted external input,
 > structured output, prompt injection & guardrails), see [phase-c-theory.md](phase-c-theory.md).
 >
-> **Status: IN PROGRESS** — 2 of 4 tools done. This doc grows as the phase completes.
+> **Status: COMPLETE** — all 4 tools built, tested, and live-verified.
 
 ---
 
@@ -23,8 +23,8 @@ questions. Phase B gave us *retrieval*; Phase C gives us *things to do with it*.
 |---|---|---|---|
 | 1 | Adzuna client | Search AU jobs, cached to SQLite | ✅ Done |
 | 2 | Gap analyzer | Resume-vs-job skill gaps (LLM) | ✅ Done |
-| 3 | Project suggester | Portfolio projects to close gaps (LLM) | ⏳ Pending |
-| 4 | Interview generator | Tailored interview questions (LLM) | ⏳ Pending |
+| 3 | Project suggester | Portfolio projects to close gaps (LLM) | ✅ Done |
+| 4 | Interview generator | Tailored interview questions (LLM) | ✅ Done |
 
 **What's intentionally NOT in Phase C:**
 - **No agent orchestration.** The tools are callable functions; the LangGraph
@@ -54,10 +54,11 @@ tool function  ─────────────────────�
 returns a typed result (SQLAlchemy row / Pydantic model)
 ```
 
-Two tools so far, two flavours:
+Four tools, two flavours:
 - **Adzuna client** — a *data* tool. No LLM. Hits an external API, caches to SQLite.
-- **Gap analyzer** — an *LLM* tool. Reuses Phase B retrieval, calls gpt-4o-mini,
-  returns a validated Pydantic object.
+- **Gap analyzer, project suggester, interview generator** — *LLM* tools. They call
+  gpt-4o-mini with structured output and return validated Pydantic objects; the gap
+  analyzer also reuses Phase B retrieval, and its output feeds the other two.
 
 ---
 
@@ -98,15 +99,20 @@ The flow:
 4. The whole call is wrapped in a Langfuse observation `as_type="tool"` so it
    shows up as a tool call in traces (Phase D will lean on this).
 
-### 3.4 `app/models/analysis.py` — the gap-analysis schema
+### 3.4 `app/models/analysis.py` — the LLM-tool schemas
 
-Pydantic models that double as the LLM's structured-output contract:
+Pydantic models that double as the LLM's structured-output contract for all three
+LLM tools:
 - **`SkillAssessment`** — `skill`, `status` (matched/partial/missing), `evidence`.
 - **`GapAnalysis`** — `job_title`, `assessments[]`, `fit_score` (0–100), `summary`,
   plus `matched_skills`/`partial_skills`/`missing_skills` as derived properties
   (computed from `assessments`, so they can't drift out of sync). The `Field`
   descriptions are sent to the model as schema documentation, so they're written
   to *guide generation*, not just the reader.
+- **`ProjectSuggestion` / `ProjectSuggestions`** — project ideas (title, description,
+  skills_covered, difficulty, key_deliverables).
+- **`InterviewQuestion` / `InterviewKit`** — questions (text, category, targets_skill,
+  what_to_look_for).
 
 ### 3.5 `app/services/gap_analyzer.py` — tool #2 (resume-vs-job gaps)
 
@@ -124,7 +130,25 @@ Pydantic models that double as the LLM's structured-output contract:
    Traced as a generation via the Langfuse callback.
 4. Overwrite `job_title` with the real value (don't trust the model to echo it).
 
-### 3.6 Tests & smoke scripts
+### 3.6 `app/services/project_suggester.py` — tool #3 (portfolio projects)
+
+`async suggest_projects(gap: GapAnalysis) -> ProjectSuggestions`. Takes the gap
+analysis and asks gpt-4o-mini (via `with_structured_output(ProjectSuggestions)`,
+`temperature=0.3` for idea diversity) for 3–5 portfolio projects that close the
+**missing** skills — explicitly told not to target already-matched skills. Input
+is our own structured data (not raw untrusted text), so it relies on
+structured-output validation rather than the gap analyzer's injection hardening.
+Traced as a generation.
+
+### 3.7 `app/services/interview_generator.py` — tool #4 (interview questions)
+
+`async generate_interview_questions(gap: GapAnalysis) -> InterviewKit`. Generates
+6–8 questions across three categories — **technical** (depth on matched skills),
+**behavioral**, and **gap-probing** (how the candidate would approach missing
+skills, framed as learning, not gotchas) — each with the skill it targets and
+"what a strong answer demonstrates". Same structured-output + tracing pattern.
+
+### 3.8 Tests & smoke scripts
 
 - **`tests/test_adzuna_client.py`** (5) — mocked HTTP against a saved sample
   payload, each on a throwaway temp SQLite DB: result normalization, query-hash
@@ -134,10 +158,17 @@ Pydantic models that double as the LLM's structured-output contract:
   job and its chunks reach the prompt, empty-retrieval placeholder, and the
   **guardrail test** (untrusted text quarantined inside the delimiters + hardening
   prompt present).
+- **`tests/test_project_suggester.py`** (3) — mocked LLM: validated result with
+  authoritative title, prompt prioritizes missing & includes matched, no-missing
+  edge case.
+- **`tests/test_interview_generator.py`** (3) — mocked LLM: validated kit, prompt
+  includes matched/partial/missing, no-missing edge case.
 - **`scripts/smoke_adzuna_search.py`** — opt-in: one live call, then proves the
   repeat is served from cache.
 - **`scripts/smoke_gap_analyzer.py`** — opt-in: a normal job *and* an adversarial
   injection job, with a guardrail check.
+- **`scripts/smoke_project_suggester.py`** / **`scripts/smoke_interview_generator.py`**
+  — opt-in, each chains `analyze_gap` → the tool end to end.
 
 ---
 
@@ -194,11 +225,16 @@ docker compose -f docker/docker-compose.yml exec app python3 -m scripts.smoke_ad
 
 # Live: gap analyzer incl. the injection case (real OpenAI calls)
 docker compose -f docker/docker-compose.yml exec app python3 -m scripts.smoke_gap_analyzer
+
+# Live: project suggester and interview generator (chain off a gap analysis)
+docker compose -f docker/docker-compose.yml exec app python3 -m scripts.smoke_project_suggester
+docker compose -f docker/docker-compose.yml exec app python3 -m scripts.smoke_interview_generator
 ```
 
-Expected: full suite passes (30 at time of writing); the Adzuna smoke shows a
+Expected: full suite passes (36 at time of writing); the Adzuna smoke shows a
 cache hit on call 2; the gap-analyzer smoke flags the injection job's real gaps
-(low score), not a perfect 100.
+(low score), not a perfect 100; the suggester/interview smokes target the missing
+skills.
 
 ---
 
@@ -206,8 +242,6 @@ cache hit on call 2; the gap-analyzer smoke flags the injection job's real gaps
 
 | Missing piece | Lands in |
 |---|---|
-| Project suggester (tool #3) | Phase C (next) |
-| Interview generator (tool #4) | Phase C |
 | LangGraph agent that chains the tools | Phase D |
 | Optional cache hardening (in-process LRU, quota guard, retry/backoff) | Phase D / when real call volume or 429s appear |
 | Schema migrations (Alembic) instead of `create_all` | Phase F / hardening |
@@ -217,20 +251,20 @@ cache hit on call 2; the gap-analyzer smoke flags the injection job's real gaps
 
 ---
 
-## 8. Tech stack used in Phase C (so far)
+## 8. Tech stack used in Phase C
 
 | Component | Package(s) | Role |
 |---|---|---|
 | HTTP client | `httpx` | Adzuna API calls |
 | DB | `sqlalchemy` (sync engine over SQLite) | Job + cache persistence |
-| LLM | `langchain-openai` (`gpt-4o-mini`) | Gap analysis |
+| LLM | `langchain-openai` (`gpt-4o-mini`) | Gap analysis, project suggestions, interview questions |
 | Structured output | `langchain` + `pydantic` | Schema-constrained, validated LLM output |
 | Retrieval | Phase B `HybridRetriever` | Resume context for the gap analyzer |
 | Tracing | `langfuse` v4.6.1 | Tool/generation observations |
 
 ---
 
-## 9. Skills demonstrated by Phase C (so far)
+## 9. Skills demonstrated by Phase C
 
 ### API integration & caching
 - **Cache-first external API client** with a query-keyed SQLite cache, param
@@ -271,6 +305,8 @@ cache hit on call 2; the gap-analyzer smoke flags the injection job's real gaps
 8. Why did the first injection defense fail, and which two changes fixed it?
 9. Why was the *first* injection test inconclusive, and how did the redesign fix that?
 10. What can a prompt-based guardrail *not* guarantee, and what's the next layer?
+11. Why do tools #3 and #4 not need the gap analyzer's injection hardening?
+12. What's the payoff (for Phase D) of every tool returning a validated Pydantic model and being independently testable?
 
 ---
 
@@ -305,3 +341,9 @@ Because the first injection job's *legitimate* requirements ("Python and ML") we
 
 **10. What can a prompt-based guardrail *not* guarantee, and what's the next layer?**
 It can't guarantee resistance in general. Prompt hardening is **probabilistic, not a proof**: we verified it against one model and one phrasing, but a novel attack, a different model, or a stronger injection might still get through — there's no theorem that the model will always honour the hierarchy. The next layer is **defense-in-depth**, specifically a two-stage **extract-then-assess** design: a first call extracts only the structured skill list (discarding prose, so injected instructions never reach scoring), then a second call scores against that clean list. Beyond that, systematic **injection evals** in Phase F (a battery of adversarial postings run as a regression gate) turn "we tried one attack" into "we continuously test many". Layering independent, weaker defenses beats betting everything on one prompt.
+
+**11. Why do tools #3 and #4 not need the gap analyzer's injection hardening?**
+Because their input is *our own structured data* — a `GapAnalysis` produced by the already-hardened gap analyzer (validated skill strings, a fit score, a summary) — not raw text a stranger wrote. Prompt injection needs an untrusted free-text channel into the model; tools #3 and #4 don't have one. They still get **guardrail #1** (structured-output validation) for correctness, but full delimiting/recency hardening would be defending against a threat that isn't present. Match the guardrail to the input: untrusted free text → injection hardening; our own typed data → schema validation. (If a tool later consumed raw job text directly, it would need the hardening too.)
+
+**12. What's the payoff (for Phase D) of every tool returning a validated Pydantic model and being independently testable?**
+Two payoffs. First, the LangGraph agent can call each tool as a node and trust the *shape* of what returns (a validated model), so nodes compose without defensive parsing — the project suggester and interview generator literally take the gap analyzer's `GapAnalysis` as input. Second, because each tool is a pure-ish function with typed I/O and offline tests, the pieces are verified independently of the agent, so when a multi-tool run misbehaves you already know the tools are sound and can focus on the orchestration. Clean capability boundaries keep the agent layer thin and debuggable.

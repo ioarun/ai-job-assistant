@@ -2,9 +2,9 @@
 
 > The *why* behind everything Phase C implements. Read this for the concepts;
 > read [phase-c.md](phase-c.md) for the file-by-file build walkthrough.
-> Last updated: 2026-06-19.
+> Last updated: 2026-06-21.
 >
-> **Status: IN PROGRESS** — covers tools 1–2 of 4. Grows as the phase completes.
+> **Status: COMPLETE** — covers all 4 tools.
 
 ---
 
@@ -20,12 +20,12 @@ call and in what order. A tool is only agent-ready if it is:
 - **Independently testable** — you can unit-test it without the agent.
 - **Observable** — each call emits a trace span so a multi-tool agent run is debuggable.
 
-So Phase C is really about *designing clean capability boundaries*. Two tools so
-far illustrate the two kinds: a **data tool** (Adzuna client — talks to the
-outside world, no LLM) and an **LLM tool** (gap analyzer — reasons with a model).
-Each kind has its own dominant concern: data tools care about **caching and
-unreliable external systems**; LLM tools care about **structured output and
-guardrails**.
+So Phase C is really about *designing clean capability boundaries*. All four tools
+illustrate the two kinds: one **data tool** (Adzuna client — talks to the outside
+world, no LLM) and three **LLM tools** (gap analyzer, project suggester, interview
+generator — reason with a model). Each kind has its own dominant concern: data
+tools care about **caching and unreliable external systems**; LLM tools care about
+**structured output and guardrails**.
 
 ---
 
@@ -193,11 +193,37 @@ fan-out-debugging argument from Phase A, now realized by real tools.
 
 ---
 
+## Step 6 — Composing tools into a pipeline
+
+The three LLM tools aren't independent islands — they form a **chain**: the gap
+analyzer produces a `GapAnalysis`, and *that typed object is the input* to both the
+project suggester ("what should I build to close these gaps?") and the interview
+generator ("what will they ask me about these gaps?"). This is why the tool I/O
+being **typed and validated** matters beyond one tool: a stage can consume the
+previous stage's output directly, with no fragile re-parsing of free text between
+steps.
+
+It also explains why tools #3 and #4 need *less* guarding than the gap analyzer.
+Guardrails track the **trust boundary**: the gap analyzer sits at it (raw,
+untrusted job text enters the model), so it needs injection hardening. The
+suggester and interview generator consume a `GapAnalysis` — *our own structured,
+already-validated data* — so the untrusted-text channel is gone; they rely on
+structured-output validation alone. Match the defense to where the untrusted input
+actually is.
+
+Phase D will make this chain dynamic: instead of a fixed search → analyze →
+suggest/interview sequence, a LangGraph agent will *decide* which tool to call
+next. Typed tools with clean boundaries are exactly what make that orchestration
+layer thin and debuggable.
+
+---
+
 ## Glossary (quick reference)
 
 | Term | One-liner |
 |---|---|
 | **Tool** | A self-contained, typed capability the agent can call (search, analyze, …). |
+| **Tool pipeline / chaining** | Feeding one tool's typed output as the next tool's input (gap → suggest / interview). |
 | **Cache** | Store a result keyed by its inputs so repeat requests skip the expensive call. |
 | **Cache key / query hash** | A stable hash of the normalized inputs; identical inputs → same key → hit. |
 | **TTL (time-to-live)** | Freshness window; a cached entry older than this is re-fetched. |
@@ -232,4 +258,9 @@ fan-out-debugging argument from Phase A, now realized by real tools.
 > and placing the security reminder after it for recency, and I fixed the test
 > itself to be discriminating. I'm honest that a prompt-based defense is
 > probabilistic, not a proof — the next layer is a two-stage extract-then-assess
-> design and systematic injection evals in Phase F."*
+> design and systematic injection evals in Phase F. The other two tools — a project
+> suggester and an interview generator — consume the gap analyzer's typed output
+> directly, forming a pipeline; because the input is our own validated data rather
+> than untrusted text, they rely on structured-output validation rather than
+> injection hardening, which is the general principle of matching the guardrail to
+> where the untrusted input actually is."*
