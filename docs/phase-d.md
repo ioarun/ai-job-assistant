@@ -238,9 +238,34 @@ the `aja-app` container against `/workspace`, confirmed:
   `[analyze_gap] → [search_jobs, analyze_gap]`, `[bogus] → [search_jobs]`);
 - the `AsyncSqliteSaver` checkpointer wires.
 
-The full end-to-end run (real OpenAI calls; Adzuna only on a cache miss → HITL pause)
-is the live demo; it requires a resume indexed (`scripts/index_resume.py`) and the
-stack configured.
+The full end-to-end run then completed live (`scripts/run_agent.py`, real OpenAI calls):
+planner → search → analyze_gap (fit 75/100) → suggest_projects → reflector → responder,
+producing a coherent final answer. Two issues surfaced and were fixed in the process:
+
+- **`interrupt()` on Python 3.10.** LangGraph's `interrupt()` reads the run config from
+  a contextvar that LangGraph only propagates into async nodes on **Python ≥ 3.11**
+  (it needs `asyncio.create_task(context=...)`). The app image is 3.10, so the first
+  run raised *"Called get_config outside of a runnable context"*. Fix: `tool_executor`
+  takes the injected `config` and sets `var_child_runnable_config` itself around the
+  `interrupt()` call. (A future image bump to 3.11+ would make this workaround
+  unnecessary.)
+- **`Job` isn't serializable.** The checkpointer serializes the whole state after every
+  super-step via msgpack; the SQLAlchemy `Job` ORM object isn't serializable. Fix: a
+  plain Pydantic `JobView` in state (`JobView.from_orm_job`), converted in
+  `run_search_jobs`.
+
+Requires a resume indexed (`scripts/index_resume.py`) and the stack configured. The
+HITL pause fires only on an Adzuna cache **miss**; the demo run hit the cache, so the
+pause wasn't exercised end-to-end (the mechanism is verified separately).
+
+### Known follow-ups (small, not blocking)
+- **Register msgpack types.** LangGraph warns it will eventually block deserializing
+  unregistered types (`JobView`, `GapAnalysis`, `ProjectSuggestions`). Pass
+  `allowed_msgpack_modules` (or a custom serde) at compile to future-proof.
+- **Decline path.** If a user *rejects* the live search, `jobs`/`selected_job` are
+  empty but the plan still lists `analyze_gap` — which would fail on `None.title`. The
+  executor/router should skip a tool whose dependency (`TOOL_DEPENDENCIES`) is missing,
+  and the responder should report "no jobs found" gracefully.
 
 ---
 

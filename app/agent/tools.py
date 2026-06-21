@@ -12,7 +12,7 @@ with asyncio.to_thread to avoid blocking the event loop.
 import asyncio
 import logging
 
-from app.agent.state import AgentState
+from app.agent.state import AgentState, JobView
 from app.services.adzuna_client import search_jobs
 from app.services.gap_analyzer import analyze_gap
 from app.services.interview_generator import generate_interview_questions
@@ -29,7 +29,8 @@ async def run_search_jobs(state: AgentState) -> dict:
         state.get("where", "Australia"),
         results_per_page=state.get("results_per_page", 5),
     )
-    return {"jobs": jobs, "selected_job": jobs[0] if jobs else None}
+    views = [JobView.from_orm_job(j) for j in jobs]
+    return {"jobs": views, "selected_job": views[0] if views else None}
 
 
 async def run_analyze_gap(state: AgentState) -> dict:

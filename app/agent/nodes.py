@@ -12,6 +12,7 @@ tool per visit and gates a LIVE Adzuna call behind a dynamic HITL interrupt.
 import logging
 
 from langchain_core.messages import AIMessage, HumanMessage, SystemMessage
+from langchain_core.runnables.config import var_child_runnable_config
 from langchain_openai import ChatOpenAI
 from langgraph.types import interrupt
 from pydantic import BaseModel, Field
@@ -122,7 +123,7 @@ def route_from_router(state: AgentState) -> str:
 
 
 # ── tool_executor ──────────────────────────────────────────────────────────
-async def tool_executor(state: AgentState) -> dict:
+async def tool_executor(state: AgentState, config) -> dict:
     """Run exactly one tool — the next unrun plan step.
 
     For search_jobs, if the query is NOT cached the call would burn Adzuna quota, so
@@ -135,12 +136,20 @@ async def tool_executor(state: AgentState) -> dict:
         state["what"], state.get("where", "Australia"),
         results_per_page=state.get("results_per_page", 5),
     ):
-        decision = interrupt({
-            "type": "approve_live_search",
-            "what": state["what"],
-            "where": state.get("where", "Australia"),
-            "reason": "Not cached — this will make a live, quota-limited Adzuna API call.",
-        })
+        # interrupt() reads the run config from a contextvar that LangGraph does NOT
+        # propagate into async nodes on Python < 3.11 (it needs
+        # asyncio.create_task(context=...), 3.11+). The app image runs 3.10, so we set
+        # it ourselves from the config LangGraph injects into the node.
+        token = var_child_runnable_config.set(config)
+        try:
+            decision = interrupt({
+                "type": "approve_live_search",
+                "what": state["what"],
+                "where": state.get("where", "Australia"),
+                "reason": "Not cached — this will make a live, quota-limited Adzuna API call.",
+            })
+        finally:
+            var_child_runnable_config.reset(token)
         approved = decision is True or (isinstance(decision, dict) and decision.get("approved"))
         if not approved:
             completed.append(tool)
