@@ -50,6 +50,37 @@ docker compose -f docker/docker-compose.yml exec app \
   python3 -m evals.run_retrieval_eval
 ```
 
+### Run the full pipeline end to end (Phase C)
+
+Once a resume is indexed, `run_pipeline.py` drives all four Phase C tools in
+sequence — **search a live Adzuna job → analyze the resume-vs-job skill gap →
+suggest portfolio projects → generate tailored interview questions** (the
+LangGraph agent that automates this orchestration is Phase D):
+
+```bash
+# Defaults: what="AI engineer", where="Australia", analyze the first result
+docker compose -f docker/docker-compose.yml exec app \
+  python3 -m scripts.run_pipeline
+
+# Customize the search and which result to analyze
+docker compose -f docker/docker-compose.yml exec app \
+  python3 -m scripts.run_pipeline --what "machine learning engineer" --where Melbourne --pick 2 --results 8
+```
+
+| Flag | Default | Meaning |
+|---|---|---|
+| `--what` | `AI engineer` | Job search keywords |
+| `--where` | `Australia` | Location |
+| `--pick` | `0` | Index of the search result to analyze (0-based) |
+| `--results` | `5` | Number of jobs to fetch |
+
+Steps 3–5 make real OpenAI calls; the Adzuna search is served from the SQLite
+cache on repeat queries. Each tool call is traced in Langfuse.
+
+Individual tools can also be exercised on their own via the opt-in smoke scripts
+(`scripts/smoke_adzuna_search.py`, `smoke_gap_analyzer.py`,
+`smoke_project_suggester.py`, `smoke_interview_generator.py`).
+
 ## Status
 
 | Phase | Description | Status |
