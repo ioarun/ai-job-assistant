@@ -7,8 +7,9 @@
 > streaming, memory), see [phase-d-theory.md](phase-d-theory.md).
 >
 > **Status: CORE GRAPH COMPLETE** — state, tools, nodes, graph, and a CLI driver are
-> built and wiring-verified. SSE streaming endpoint and long-term (cross-session)
-> memory are intentionally deferred (see §8).
+> built and **live-verified end to end** (a real multi-tool run, plus the HITL pause
+> exercised on a cache miss — see §7). SSE streaming endpoint and long-term
+> (cross-session) memory are intentionally deferred (see §8).
 
 ---
 
@@ -73,8 +74,10 @@ merges it back per each channel's **reducer**.
   accumulates and (once checkpointed per thread) *becomes* the short-term memory.
 - `what` / `where` / `results_per_page` — the search parameters, parsed by the planner.
 - `plan: list[str]` — the planner's intended ordered tool sequence.
-- `jobs` / `selected_job` / `gap` / `projects` / `interview` — the tool outputs, each
-  typed with the Phase C / DB models we already own (`Job`, `GapAnalysis`,
+- `jobs` / `selected_job` / `gap` / `projects` / `interview` — the tool outputs. The
+  job fields are typed `JobView` — a plain Pydantic *view* of a `Job` row, because the
+  SQLAlchemy ORM object isn't msgpack-serializable and the checkpointer serializes the
+  whole state (see §7). The rest reuse the Phase C models we already own (`GapAnalysis`,
   `ProjectSuggestions`, `InterviewKit`).
 - `completed: list[str]` — tool names already run; this is how the router picks the
   *next* unrun step deterministically.
@@ -255,8 +258,10 @@ producing a coherent final answer. Two issues surfaced and were fixed in the pro
   `run_search_jobs`.
 
 Requires a resume indexed (`scripts/index_resume.py`) and the stack configured. The
-HITL pause fires only on an Adzuna cache **miss**; the demo run hit the cache, so the
-pause wasn't exercised end-to-end (the mechanism is verified separately).
+HITL pause fires only on an Adzuna cache **miss**; the first demo run hit the cache, so
+the pause didn't fire there. It was then exercised end-to-end in the decline-path
+follow-up below — a cache-miss run where the pause fired, the human declined, no live
+Adzuna call was made, and the run still completed cleanly.
 
 ### Follow-ups (resolved)
 - **Register msgpack types.** ✅ `open_graph` now builds the saver with a
@@ -284,7 +289,106 @@ agent as a graph in the first place.
 
 ---
 
-## 9. One-paragraph summary for an interview
+## 9. Skills demonstrated by Phase D
+
+### Agentic AI / orchestration
+The core deliverable: four standalone tools become an **agent** that decides *which*
+tools to run and *in what order*. Built as an explicit LangGraph `StateGraph` —
+planner → tool_router → tool_executor (loop) → reflector → responder — so the
+plan/route/reflect machinery is visible structure, not hidden inside a prebuilt
+`create_react_agent`. Planning is a structured LLM call (`with_structured_output(Plan)`)
+hardened by a deterministic `_normalize_plan` that injects missing prerequisites.
+
+### AI safety / human-in-the-loop
+A **dynamic** `interrupt()` gates the one costly, irreversible action — a live,
+quota-burning Adzuna call — and *only* that action: a cache hit runs free. The graph
+pauses, checkpoints, surfaces an approval payload, and resumes from the exact point via
+`Command(resume=...)`. The decline path is handled gracefully (no live call, downstream
+tools skipped, a coherent answer still produced) rather than crashing.
+
+### Durable state & memory
+One typed `AgentState`; nodes return partial updates merged per-channel by reducers
+(`add_messages` appends, everything else overwrites). The `AsyncSqliteSaver`
+checkpointer keyed by `thread_id` is the single mechanism behind short-term memory,
+durability, and HITL pause/resume — chosen over `MemorySaver` precisely because resume
+must survive across separate invocations.
+
+### Engineering
+Async graph with a sync tool bridged via `asyncio.to_thread`; a serialization-safe
+state (`JobView` + a `JsonPlusSerializer` with registered msgpack types); a streaming
+CLI driver (`graph.astream(stream_mode="updates")`) that renders the HITL prompt and
+resumes. A real Python-3.10 runtime quirk (contextvar propagation into async nodes) was
+diagnosed and worked around rather than papered over.
+
+### LLMOps / observability
+The planner and responder LLM calls carry Langfuse callbacks and named runs
+(`agent.planner`, `agent.responder`); the Adzuna tool traces as `tool.adzuna.search`.
+The whole run shows up as one inspectable trace tree.
+
+---
+
+## 10. Questions to ask yourself (interview-readiness check)
+
+1. Why model the agent as a `StateGraph` instead of a plain `while` loop with `if`s?
+2. What is the shared state, and why does each node return a *partial* update?
+3. Why does `messages` use the `add_messages` reducer while every other channel overwrites?
+4. Why is `JobView` in state instead of the `Job` ORM object?
+5. Why an explicit planner emitting a plan, rather than `llm.bind_tools` tool-calling?
+6. What does `_normalize_plan` guarantee, and which runtime error does it prevent?
+7. `tool_router` returns `{}` — why keep a no-op node, and where does the looping decision actually live?
+8. Why gate HITL on a cache **miss**, and why is a *dynamic* interrupt the right tool over a static "approve the plan up front"?
+9. How does pause/resume survive across separate invocations — what's the mechanism?
+10. Why `AsyncSqliteSaver` instead of `MemorySaver`?
+11. Why did `interrupt()` fail on Python 3.10, and what's the workaround?
+12. When the user declines the live search, how does the graph avoid crashing on `analyze_gap` with no selected job?
+13. Why is the reflector deterministic (no LLM), and what would an LLM reflector add?
+
+---
+
+## 11. Answers (elaborated)
+
+**1. Why model the agent as a `StateGraph` instead of a plain `while` loop with `if`s?**
+You *could* write the same control flow as a loop — but the graph buys you three things the loop doesn't. (a) The control flow becomes **inspectable structure**: nodes and edges you can draw, trace, and reason about, rather than logic buried in a function body. (b) You get **checkpointing for free** — LangGraph persists state after every super-step, which is what makes durability, short-term memory, and HITL pause/resume work without you writing any of it. (c) The pause/resume is a first-class primitive (`interrupt()`); doing that by hand in a `while` loop means serializing your own continuation. The graph is the abstraction that makes "an agent that can stop, ask a human, and pick up exactly where it left off" a few lines instead of a framework.
+
+**2. What is the shared state, and why does each node return a *partial* update?**
+`AgentState` is one `TypedDict` (`total=False`) that flows through every node — the request params, the plan, each tool's output, the bookkeeping (`completed`), and the final answer. Each node returns **only the keys it changed**, and LangGraph merges that back per each channel's reducer. Partial updates keep nodes decoupled (the planner doesn't need to know or preserve the responder's fields), make the merge semantics explicit per channel, and keep each checkpoint a clean diff. `total=False` is what lets a node legally return a dict with just one or two keys.
+
+**3. Why does `messages` use the `add_messages` reducer while every other channel overwrites?**
+Because they model different things. `messages` is a **log** — each node's progress line should *accumulate*, and once the thread is checkpointed that growing list *is* the agent's short-term memory. So it needs an **append** reducer (`add_messages`). Every other channel (`gap`, `plan`, `selected_job`, …) holds the *current* value of one thing — a fresh gap analysis should *replace* the old one, not pile up — so the default **overwrite** reducer is correct. The reducer is how you declare "is this channel a running log or a latest-value slot?"
+
+**4. Why is `JobView` in state instead of the `Job` ORM object?**
+Because the checkpointer serializes the **entire state** after every super-step (via msgpack), and a SQLAlchemy `Job` ORM instance isn't msgpack-serializable — it carries session/identity-map machinery, not just data. Putting a `Job` in state crashes the checkpoint. `JobView` is a plain Pydantic mirror of the columns we actually use (`JobView.from_orm_job`), so state stays serializable. We also register the view (and the other Pydantic result models) with a `JsonPlusSerializer(allowed_msgpack_modules=...)` so LangGraph will round-trip them instead of warning about unregistered types. General rule: only put serializable, plain-data objects in agent state.
+
+**5. Why an explicit planner emitting a plan, rather than `llm.bind_tools` tool-calling?**
+Two reasons specific to this agent. (a) An explicit `plan` makes the agent's intended trajectory **visible as data** *before* any tool runs — exactly what we want to trace and to gate with HITL; with `bind_tools` the trajectory only emerges step-by-step as the model decides. (b) Our tool arguments come from prior **state** (`selected_job`, `gap`), not from free-form model output, so letting the model invent call arguments buys almost nothing here. The trade-off is real: the agent can't improvise a tool mid-run that wasn't in the plan. For a small fixed toolset that's a good bargain; an open-ended agent with many tools and model-derived arguments would favour `bind_tools`.
+
+**6. What does `_normalize_plan` guarantee, and which runtime error does it prevent?**
+It guarantees the plan is **valid and dependency-ordered** regardless of what the LLM emitted. It drops unknown tool names, falls back to `["search_jobs"]` if nothing valid remains, **prepends missing prerequisites** (ask for interview questions alone and you still get `search_jobs → analyze_gap → generate_interview_questions`), and de-dups while preserving order. The error it prevents: a tool running before its input exists — e.g. `analyze_gap` firing with no `selected_job` in state, which would blow up in the wrapper. It turns a sloppy-but-plausible LLM plan into one that can't produce that class of runtime failure. (The executor's prerequisite check in §4 is the second, belt-and-braces guard for the case where a prerequisite tool *ran but produced nothing* — e.g. a declined search.)
+
+**7. `tool_router` returns `{}` — why keep a no-op node, and where does the looping decision actually live?**
+The node itself does nothing — it exists so the loop has a **named hub** in the graph and the trace, matching the mental model "after each tool, control returns to the router." The actual decision lives in the **conditional edge** `route_from_router(state)`: it returns `"tool_executor"` if there's an unrun plan step, else `"reflector"`. Separating them means the branching logic is a small, pure, **independently testable** function rather than an `if` hidden inside a node's body — the graph equivalent of factoring the loop condition out where you can see and test it.
+
+**8. Why gate HITL on a cache miss, and why a *dynamic* interrupt over static "approve the plan"?**
+Because the thing worth a human's attention is the **costly, irreversible** action — a live Adzuna call burns the rate-limited free-tier quota (the Phase C lesson) — and a cache **hit** is free and instant, so interrupting on it would be pure friction. `is_search_cached()` lets the executor know *before* calling which case it's in. A **dynamic** interrupt (the node decides *whether* to pause based on the live situation) expresses exactly that "pause only when it actually costs something" rule; a **static** "approve the whole plan up front" interrupt can't see runtime state like cache freshness, so it would either over-prompt or under-protect. Gate the irreversible thing, at the moment you know it's irreversible.
+
+**9. How does pause/resume survive across separate invocations — what's the mechanism?**
+The checkpointer. When `interrupt()` fires, LangGraph **persists the full state to SQLite keyed by `thread_id`** and halts; the approval payload surfaces to the caller. The process can exit entirely. On the next invocation with the *same* `thread_id` and a `Command(resume={"approved": ...})`, LangGraph loads the checkpoint and continues from the exact super-step that interrupted — the resume value becomes `interrupt()`'s return. There's no in-memory continuation to keep alive; durability *is* the resume mechanism. That's also why the same `thread_id` gives you conversation memory for free.
+
+**10. Why `AsyncSqliteSaver` instead of `MemorySaver`?**
+`MemorySaver` keeps checkpoints in process memory — fine for a single uninterrupted run, but it evaporates when the process exits. HITL resume must work **across separate invocations** (today the CLI is re-run to approve; tomorrow it'll be two separate HTTP requests), so the checkpoint has to outlive the process. `AsyncSqliteSaver` persists to a file (`data/agent_checkpoints.sqlite`), so a thread paused in one run resumes in the next. It's also `async` to match the async graph. SQLite specifically because the project already uses it and a single-file store is plenty at this scale.
+
+**11. Why did `interrupt()` fail on Python 3.10, and what's the workaround?**
+`interrupt()` reads the run config from a **contextvar**, and LangGraph only propagates that contextvar into **async** nodes on **Python ≥ 3.11** (it relies on `asyncio.create_task(context=...)`, which is 3.11+). The app image runs 3.10, so the first call raised *"Called get_config outside of a runnable context."* The fix: `tool_executor` takes the `config` LangGraph injects into the node and sets the contextvar itself (`var_child_runnable_config.set(config)`) around the `interrupt()` call, resetting it in a `finally`. A future bump to a 3.11+ image makes the workaround unnecessary — it's a runtime quirk, not a design flaw.
+
+**12. When the user declines the live search, how does the graph avoid crashing on `analyze_gap` with no selected job?**
+Two cooperating guards. On decline, `tool_executor` marks `search_jobs` completed but writes `jobs: []` / `selected_job: None` — so the loop advances instead of retrying. Then, before running any tool, the executor checks `TOOL_DEPENDENCIES`: if a tool's prerequisite state key is missing (`analyze_gap` needs `selected_job`), it **skips** that tool — also marking it completed so the loop keeps moving — and records a "skipped: prerequisite missing" message. So the plan drains cleanly, the reflector notes the missing outputs, and the responder produces a graceful "no jobs found" answer. Declining is a normal path, not an exception.
+
+**13. Why is the reflector deterministic (no LLM), and what would an LLM reflector add?**
+Cost and honesty. Today the reflector answers one cheap, objective question — *did every planned tool produce its output key?* — which needs no model call, so we don't pay tokens to state the obvious. An **LLM** reflector would answer a harder, subjective question — *is this answer actually good / complete / faithful?* — and could route **back** to `tool_router` to retry or fetch more before responding. That's a genuine upgrade (it's the "reflection" that makes agents self-correct), but it's a localized change to one node, so we documented it as a clean extension rather than build it speculatively now.
+
+---
+
+## 12. One-paragraph summary for an interview
 
 > *"Phase D turns my four Phase C tools into a LangGraph agent. There's one typed shared
 > state; a planner LLM parses the request and emits an ordered plan; a conditional edge
