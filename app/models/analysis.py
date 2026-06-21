@@ -58,3 +58,30 @@ class GapAnalysis(BaseModel):
     @property
     def missing_skills(self) -> list[str]:
         return [a.skill for a in self.assessments if a.status == "missing"]
+
+
+class ProjectSuggestion(BaseModel):
+    """A portfolio project idea that closes one or more skill gaps."""
+
+    title: str = Field(description="Short, concrete project name.")
+    description: str = Field(
+        description="2-3 sentences: what the project is and what the candidate builds."
+    )
+    skills_covered: list[str] = Field(
+        description="Which of the candidate's missing/partial skills this project demonstrably builds."
+    )
+    difficulty: Literal["beginner", "intermediate", "advanced"] = Field(
+        description="Difficulty relative to the candidate's current background."
+    )
+    key_deliverables: list[str] = Field(
+        description="2-4 concrete artifacts that would prove the skills (e.g. a deployed API, a benchmark, a demo)."
+    )
+
+
+class ProjectSuggestions(BaseModel):
+    """A set of portfolio project suggestions targeting a job's skill gaps."""
+
+    job_title: str = Field(description="The job these suggestions target.")
+    suggestions: list[ProjectSuggestion] = Field(
+        description="3-5 project ideas, prioritized by impact on closing the biggest gaps."
+    )
