@@ -23,6 +23,7 @@ rank-bm25                      # for hybrid retrieval (Phase B)
 
 # ── Agent (Phase D) ───────────────────────────────────────
 langgraph
+langgraph-checkpoint-sqlite    # SQLite-backed checkpointer for memory + HITL resume
 
 # ── MCP server (Phase E) ──────────────────────────────────
 mcp

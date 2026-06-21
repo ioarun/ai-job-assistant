@@ -4,8 +4,11 @@
 > [phase-d.md](phase-d.md) for the file-by-file build walkthrough (written as we build).
 > Last updated: 2026-06-21.
 >
-> **Status: PLANNED** — this is the design rationale we'll build Phase D against.
-> Nothing in `app/agent/` exists yet; this doc is the map before the territory.
+> **Status: CORE GRAPH BUILT** — `app/agent/{state,tools,nodes,graph}.py` and
+> `scripts/run_agent.py` now exist; see [phase-d.md](phase-d.md) for the build
+> walkthrough. Resolved forks: HITL gate = **dynamic interrupt on a live Adzuna call**
+> (Step 6, first option); planner uses an **explicit plan**, not `bind_tools` (Step 3).
+> Still deferred: SSE endpoint (Step 7) and long-term memory (Step 4, long-term half).
 
 ---
 

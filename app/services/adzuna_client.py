@@ -122,6 +122,34 @@ def _upsert_job(session, fields: dict) -> Job:
 
 
 # ── Public API ─────────────────────────────────────────────────────────
+def is_search_cached(
+    what: str,
+    where: str = "Australia",
+    page: int = 1,
+    results_per_page: int = 20,
+    max_age_hours: int = 24,
+) -> bool:
+    """Return True if this exact search is in the cache and still fresh.
+
+    Lets the Phase D agent decide whether `search_jobs` would hit the live Adzuna
+    API (a quota-burning cache MISS) and pause for human approval first — without
+    actually fetching. Same normalization/hashing as `search_jobs`, so the verdict
+    matches what `search_jobs` will subsequently do.
+    """
+    global _DB_READY
+    if not _DB_READY:
+        init_db()
+        _DB_READY = True
+
+    params = _normalize_params(what, where, page, results_per_page)
+    qhash = _query_hash(params)
+    fresh_after = datetime.utcnow() - timedelta(hours=max_age_hours)
+
+    with get_sync_session() as session:
+        cached = session.query(JobSearchCache).filter_by(query_hash=qhash).one_or_none()
+        return cached is not None and cached.fetched_at >= fresh_after
+
+
 def search_jobs(
     what: str,
     where: str = "Australia",
