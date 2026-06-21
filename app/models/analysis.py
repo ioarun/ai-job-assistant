@@ -85,3 +85,28 @@ class ProjectSuggestions(BaseModel):
     suggestions: list[ProjectSuggestion] = Field(
         description="3-5 project ideas, prioritized by impact on closing the biggest gaps."
     )
+
+
+class InterviewQuestion(BaseModel):
+    """A single tailored interview question."""
+
+    question: str = Field(description="The interview question, specific to this candidate and role.")
+    category: Literal["technical", "behavioral", "gap-probing"] = Field(
+        description=(
+            "technical = skills/knowledge; behavioral = past experience/teamwork; "
+            "gap-probing = targets a missing or partial skill."
+        )
+    )
+    targets_skill: str = Field(description="The specific skill or area this question probes.")
+    what_to_look_for: str = Field(
+        description="What a strong answer demonstrates — interviewer guidance and candidate prep."
+    )
+
+
+class InterviewKit(BaseModel):
+    """A set of tailored interview questions for a candidate and role."""
+
+    job_title: str = Field(description="The job these questions target.")
+    questions: list[InterviewQuestion] = Field(
+        description="6-8 questions mixing technical, behavioral, and gap-probing categories."
+    )
