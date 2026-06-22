@@ -1,0 +1,17 @@
+{
+  "//": "Phase E — connect Claude Desktop to the AI Job Assistant MCP server.",
+  "//1": "Prereq: the app container must be running and on the compose network so",
+  "//2": "the tools see .env (OpenAI/Adzuna keys) and can reach langfuse-web for tracing:",
+  "//3": "    docker compose -f docker/docker-compose.yml --env-file .env up -d app",
+  "//4": "Then copy the 'ai-job-assistant' block below into Claude Desktop's config:",
+  "//5": "  macOS  ~/Library/Application Support/Claude/claude_desktop_config.json",
+  "//6": "  Linux  ~/.config/Claude/claude_desktop_config.json",
+  "//7": "and fully restart Claude Desktop. 'docker exec -i' attaches one stdio JSON-RPC",
+  "//8": "stream to a fresh `python3 -m app.mcp_server` process inside the running app container.",
+  "mcpServers": {
+    "ai-job-assistant": {
+      "command": "docker",
+      "args": ["exec", "-i", "aja-app", "python3", "-m", "app.mcp_server"]
+    }
+  }
+}

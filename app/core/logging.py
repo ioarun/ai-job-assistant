@@ -51,8 +51,12 @@ _STD_LOG_KEYS = {
 }
 
 
-def configure_logging(level: str = "INFO", env: str = "dev") -> None:
-    """Install our handlers on the root logger. Idempotent."""
+def configure_logging(level: str = "INFO", env: str = "dev", stream=sys.stdout) -> None:
+    """Install our handlers on the root logger. Idempotent.
+
+    `stream` is where log lines go (default stdout). The MCP server (Phase E)
+    speaks JSON-RPC over stdout, so it passes sys.stderr to keep stdout clean.
+    """
     root = logging.getLogger()
     root.setLevel(level.upper())
 
@@ -60,7 +64,7 @@ def configure_logging(level: str = "INFO", env: str = "dev") -> None:
     for h in list(root.handlers):
         root.removeHandler(h)
 
-    handler = logging.StreamHandler(sys.stdout)
+    handler = logging.StreamHandler(stream)
     handler.setFormatter(JsonFormatter() if env != "dev" else PrettyFormatter())
     root.addHandler(handler)
 
