@@ -19,24 +19,26 @@ log = logging.getLogger(__name__)
 
 SYSTEM_PROMPT = """You are an experienced technical interviewer preparing questions for a candidate interviewing for a specific role.
 
-You are given a skill-gap analysis: the job title, overall fit, and which required skills are matched, partial, or missing. Generate a balanced set of interview questions tailored to THIS candidate and role.
+You are given a skill-gap analysis: the job title, overall fit, and which required skills are matched, partial, or missing. Generate a balanced set of interview questions tailored to THIS candidate and THIS role.
 
 Guidelines:
-- Mix three categories: technical (probe depth on required skills), behavioral (past experience, teamwork, problem-solving), and gap-probing (directly explore missing/partial skills to gauge potential and self-awareness).
-- For matched skills, ask questions that let a strong candidate demonstrate real depth — not trivia.
-- For missing/partial skills, ask how they'd approach or learn them, not gotchas designed to fail them.
-- For each question, state what a strong answer demonstrates.
-- Be specific to the role; avoid generic questions that could apply to any job."""
+- Mix three categories:
+  - technical: probe depth on matched skills — ask about design tradeoffs, failure modes, or production experience, not definitions.
+  - behavioral: reference the specific domain (AI/ML systems, deployment, team dynamics in engineering orgs). Avoid generic "tell me about a time" openers — anchor them to the role's context.
+  - gap-probing: for missing/partial skills, ask how the candidate would approach or ramp up, gauging self-awareness and learning strategy rather than trying to catch them out.
+- Name specific tools and technologies from the skill list in your questions — "how would you debug a LangGraph agent" beats "how would you debug an AI system".
+- Each question must be distinct — no two questions probing the same skill.
+- For each question, state concisely what a strong answer demonstrates."""
 
 USER_TEMPLATE = """Job title: {job_title}
 Overall fit score: {fit_score}/100
 Fit summary: {summary}
 
-Matched skills (probe for depth): {matched}
-Partial skills (explore how they'd strengthen): {partial}
-Missing skills (gap-probing — gauge approach & learning): {missing}
+Matched skills (probe for depth, name the tools in your questions): {matched}
+Partial skills (explore how they'd strengthen — be specific about the technology): {partial}
+Missing skills (gap-probing — gauge self-awareness and ramp-up approach): {missing}
 
-Generate 6-8 tailored interview questions across the three categories."""
+Generate 6-8 tailored interview questions across the three categories. Each question must name specific technologies or contexts from the skill list above — no generic questions."""
 
 
 async def generate_interview_questions(gap: GapAnalysis) -> InterviewKit:

@@ -190,28 +190,65 @@ def reflector(state: AgentState) -> dict:
 
 
 # ── responder ────────────────────────────────────────────────────────────────
-RESPONDER_SYSTEM = """You are an AI job-search assistant. Using ONLY the structured
-results provided, write a concise, helpful answer for the user. Summarise the jobs
-found, the resume fit and key gaps, suggested projects, and interview prep — but only
-for the parts that are present. Be specific and don't invent anything."""
+RESPONDER_SYSTEM = """You are an AI job-search assistant presenting structured tool results to the user.
+
+Your job is to FORMAT and PRESENT the data clearly — NOT to summarise, compress, or re-interpret it.
+Present every item the tools produced. Do not drop details like deliverables, difficulty, skills covered,
+or interview guidance. Use clean markdown with headers and bullet points.
+
+Structure your output in this order (skip any section whose data is absent):
+1. Jobs Found
+2. Top Job: Resume Fit & Gaps
+3. Suggested Portfolio Projects (full detail per project: what to build, difficulty, skills covered, deliverables)
+4. Interview Preparation (all questions with category, target skill, and what a strong answer looks like)"""
 
 
 async def responder(state: AgentState) -> dict:
     """Compose the final natural-language answer from the structured state."""
     parts = []
+
     if state.get("jobs"):
-        parts.append("JOBS:\n" + "\n".join(
-            f"- {j.title} @ {j.company} ({j.location})" for j in state["jobs"]))
+        job_lines = []
+        for j in state["jobs"]:
+            line = f"- **{j.title}** @ {j.company} ({j.location})"
+            if getattr(j, "url", None):
+                line += f" — [link]({j.url})"
+            job_lines.append(line)
+        parts.append("JOBS:\n" + "\n".join(job_lines))
+
     if state.get("gap"):
         g = state["gap"]
-        parts.append(f"GAP (fit {g.fit_score}/100): matched={g.matched_skills} "
-                     f"missing={g.missing_skills}\n{g.summary}")
+        assessment_lines = "\n".join(
+            f"  - [{a.status.upper()}] {a.skill}" + (f": {a.evidence}" if a.evidence else "")
+            for a in g.assessments
+        )
+        parts.append(
+            f"GAP ANALYSIS — {g.job_title} (fit {g.fit_score}/100):\n"
+            f"Summary: {g.summary}\n"
+            f"Assessments:\n{assessment_lines}"
+        )
+
     if state.get("projects"):
-        parts.append("PROJECTS:\n" + "\n".join(
-            f"- {p.title}: {p.description}" for p in state["projects"].suggestions))
+        proj_lines = []
+        for p in state["projects"].suggestions:
+            proj_lines.append(
+                f"- **{p.title}** [{p.difficulty}]\n"
+                f"  {p.description}\n"
+                f"  Skills covered: {', '.join(p.skills_covered)}\n"
+                f"  Deliverables: {', '.join(p.key_deliverables)}"
+            )
+        parts.append("SUGGESTED PROJECTS:\n" + "\n".join(proj_lines))
+
     if state.get("interview"):
-        parts.append("INTERVIEW QUESTIONS:\n" + "\n".join(
-            f"- {q.question}" for q in state["interview"].questions))
+        q_lines = []
+        for q in state["interview"].questions:
+            q_lines.append(
+                f"- [{q.category.upper()}] **{q.question}**\n"
+                f"  Targets: {q.targets_skill}\n"
+                f"  Strong answer: {q.what_to_look_for}"
+            )
+        parts.append("INTERVIEW QUESTIONS:\n" + "\n".join(q_lines))
+
     context = "\n\n".join(parts) or "(no results were produced)"
 
     resp = await _llm().ainvoke(
